@@ -78,6 +78,7 @@ def get_item_price(token: str) -> dict:
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/json",
         "Accept": "application/json",
+        "x-marketplace": "www.amazon.com",
     })
 
     try:
