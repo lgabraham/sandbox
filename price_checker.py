@@ -2,14 +2,16 @@
 Amazon Price Checker — Creators API (v3.x OAuth2)
 
 Tracks prices for multiple ASINs, logs daily history, and alerts
-via GitHub Issues when prices drop below their thresholds.
+via GitHub Issues when prices drop below a dynamic threshold based
+on the 25th percentile of historical prices.
 
 Modes:
-  --check   (default) Fetch today's prices, log them, alert if below threshold.
+  --check   (default) Fetch today's prices, log them, alert if a deal.
   --summary           Create a weekly summary issue with the last 7 days of prices.
 """
 
 import json
+import math
 import os
 import subprocess
 import sys
@@ -31,11 +33,55 @@ TOKEN_URL = "https://api.amazon.com/auth/o2/token"
 ITEMS_URL = "https://creatorsapi.amazon/catalog/v1/getItems"
 PRICE_LOG = Path("price_history.json")
 
-# Products to track: (ASIN, friendly label, price threshold)
+# Alert percentile: alert when price is in the bottom N% of history.
+# 25 = bottom quarter — "cheaper than 75% of prices we've seen."
+ALERT_PERCENTILE = 25
+
+# Minimum number of data points before dynamic thresholds kick in.
+# Until we have this many, we use the fallback hard ceiling.
+MIN_HISTORY_FOR_DYNAMIC = 7
+
+# Products to track.
+# "max_price" is a hard ceiling — never alert above this even if the
+# percentile math says to (guards against sparse/weird early data).
 PRODUCTS = [
-    {"asin": "B0002E2EYY", "label": "Lavazza DEK",         "threshold": 18.00},
-    {"asin": "B084YXNC2J", "label": "Lavazza DEK Filtro",  "threshold": 15.00},
+    {"asin": "B0002E2EYY", "label": "Lavazza DEK",         "max_price": 20.00},
+    {"asin": "B084YXNC2J", "label": "Lavazza DEK Filtro",  "max_price": 18.00},
 ]
+
+
+# ---------------------------------------------------------------------------
+# Percentile math
+# ---------------------------------------------------------------------------
+def percentile(values: list[float], pct: float) -> float:
+    """Compute the pct-th percentile of a sorted list using linear interpolation."""
+    if not values:
+        return 0.0
+    s = sorted(values)
+    k = (pct / 100) * (len(s) - 1)
+    f = math.floor(k)
+    c = math.ceil(k)
+    if f == c:
+        return s[int(k)]
+    return s[f] * (c - k) + s[c] * (k - f)
+
+
+def dynamic_threshold(asin: str, max_price: float) -> tuple[float, str]:
+    """Return (threshold, explanation) for a product.
+
+    Uses the 25th percentile of all historical prices once we have
+    enough data; otherwise falls back to max_price.
+    """
+    history = load_price_history()
+    entries = history.get(asin, [])
+    prices = [e["price"] for e in entries]
+
+    if len(prices) >= MIN_HISTORY_FOR_DYNAMIC:
+        p25 = percentile(prices, ALERT_PERCENTILE)
+        threshold = min(p25, max_price)  # never exceed hard ceiling
+        return (threshold, f"p{ALERT_PERCENTILE} of {len(prices)} data points")
+    else:
+        return (max_price, f"fallback (only {len(prices)}/{MIN_HISTORY_FOR_DYNAMIC} data points)")
 
 
 # ---------------------------------------------------------------------------
@@ -124,16 +170,10 @@ def extract_all_prices(response: dict) -> dict[str, tuple[str, float | None]]:
 
 # ---------------------------------------------------------------------------
 # Price history  (keyed by ASIN)
-#
-# Format: {
-#   "B0002E2EYY": [ {"date": "2026-06-02", "price": 25.00, "product": "..."}, ... ],
-#   "B084YXNC2J": [ ... ],
-# }
 # ---------------------------------------------------------------------------
 def load_price_history() -> dict[str, list[dict]]:
     if PRICE_LOG.exists():
         data = json.loads(PRICE_LOG.read_text())
-        # Migrate from old flat-list format
         if isinstance(data, list):
             return {"B0002E2EYY": data}
         return data
@@ -197,6 +237,7 @@ def compute_stats(asin: str) -> dict:
         "all_time_low": min(prices),
         "all_time_high": max(prices),
         "all_time_avg": sum(prices) / len(prices),
+        "data_points": len(prices),
     }
 
     if week_prices:
@@ -234,33 +275,30 @@ def create_github_issue(title: str, body: str, label: str = "price-alert"):
 # ---------------------------------------------------------------------------
 def daily_check():
     asins = [p["asin"] for p in PRODUCTS]
-    thresholds = {p["asin"]: p["threshold"] for p in PRODUCTS}
     labels = {p["asin"]: p["label"] for p in PRODUCTS}
+    max_prices = {p["asin"]: p["max_price"] for p in PRODUCTS}
 
     print(f"Checking prices for {len(PRODUCTS)} products...")
     token = get_access_token()
     response = get_items(token, asins)
     price_data = extract_all_prices(response)
 
-    # Print summary
-    for asin in asins:
-        title, price = price_data.get(asin, ("Unknown", None))
-        if price is not None:
-            print(f"  {labels[asin]}: ${price:.2f}")
-        else:
-            print(f"  {labels[asin]}: price unavailable")
-
-    # Log all prices
+    # Log all prices first (so today's price is included in stats)
     log_prices(price_data)
 
-    # Alert for each product below its threshold
+    # Compute dynamic thresholds (now includes today's data point)
     for asin in asins:
         title, price = price_data.get(asin, ("Unknown", None))
-        if price is None:
+        threshold, explanation = dynamic_threshold(asin, max_prices[asin])
+
+        if price is not None:
+            print(f"  {labels[asin]}: ${price:.2f}  (threshold: ${threshold:.2f} — {explanation})")
+        else:
+            print(f"  {labels[asin]}: price unavailable")
             continue
-        threshold = thresholds[asin]
-        if price < threshold:
-            print(f"  {labels[asin]} ${price:.2f} < ${threshold:.2f} — creating alert!")
+
+        if price <= threshold:
+            print(f"  {labels[asin]} ${price:.2f} <= ${threshold:.2f} — creating alert!")
             stats = compute_stats(asin)
 
             # Context lines
@@ -284,7 +322,7 @@ def daily_check():
             # Stats table
             table_rows = [
                 f"| Current | **${price:.2f}** |",
-                f"| Your threshold | ${threshold:.2f} |",
+                f"| Deal threshold | ${threshold:.2f} (p{ALERT_PERCENTILE}) |",
             ]
             if "week_avg" in stats:
                 table_rows.append(f"| 7-day avg | ${stats['week_avg']:.2f} |")
@@ -292,6 +330,8 @@ def daily_check():
                 table_rows.append(f"| All-time low | ${stats['all_time_low']:.2f} |")
             if "all_time_high" in stats:
                 table_rows.append(f"| All-time high | ${stats['all_time_high']:.2f} |")
+            if "data_points" in stats:
+                table_rows.append(f"| Data points | {stats['data_points']} |")
             table = "\n".join(table_rows)
 
             body = (
@@ -302,13 +342,17 @@ def daily_check():
                 f"{table}\n\n"
                 f"**[☕ Buy it on Amazon →](https://www.amazon.com/dp/{asin}?tag={PARTNER_TAG})**\n\n"
                 f"---\n"
-                f"*Price checked automatically — close this issue to dismiss.*"
+                f"*Price checked automatically — threshold is the 25th percentile "
+                f"of {stats.get('data_points', '?')} historical prices. "
+                f"Close this issue to dismiss.*"
             )
             create_github_issue(
                 title=f"☕ Deal Alert: {labels[asin]} — ${price:.2f}",
                 body=body,
                 label="price-alert",
             )
+        else:
+            print(f"  {labels[asin]}: no alert needed.")
 
 
 # ---------------------------------------------------------------------------
@@ -323,14 +367,15 @@ def weekly_summary():
     cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).strftime("%Y-%m-%d")
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
-    # Build per-product sections
     sections = []
     for product in PRODUCTS:
         asin = product["asin"]
         label = product["label"]
-        threshold = product["threshold"]
+        max_price = product["max_price"]
         entries = history.get(asin, [])
         week = [e for e in entries if e["date"] >= cutoff]
+
+        threshold, explanation = dynamic_threshold(asin, max_price)
 
         if not week:
             sections.append(f"### {label} (`{asin}`)\nNo data this week.\n")
@@ -341,15 +386,15 @@ def weekly_summary():
 
         rows = "\n".join(
             f"| {e['date']} | ${e['price']:.2f} | "
-            f"{'✅ Below' if e['price'] < threshold else '—'} |"
+            f"{'✅ Deal' if e['price'] <= threshold else '—'} |"
             for e in week
         )
 
         sections.append(
             f"### {label} (`{asin}`)\n"
-            f"**Threshold:** ${threshold:.2f}\n\n"
-            f"| Date | Price | Alert? |\n"
-            f"|------|-------|--------|\n"
+            f"**Deal threshold:** ${threshold:.2f} ({explanation})\n\n"
+            f"| Date | Price | Deal? |\n"
+            f"|------|-------|-------|\n"
             f"{rows}\n\n"
             f"**Low:** ${low:.2f} · **High:** ${high:.2f} · "
             f"**Avg:** ${avg:.2f}\n\n"
@@ -360,7 +405,8 @@ def weekly_summary():
         f"## \U0001f4ca Weekly Price Report\n"
         f"**Period:** {cutoff} → {today}\n\n"
         + "\n---\n\n".join(sections)
-        + "\n---\n*Weekly summary generated automatically.*"
+        + "\n---\n*Weekly summary generated automatically. "
+        f"Thresholds use the 25th percentile of all historical prices.*"
     )
 
     create_github_issue(
