@@ -68,9 +68,9 @@ def get_item_price(token: str) -> dict:
         "partnerTag": PARTNER_TAG,
         "partnerType": "Associates",
         "resources": [
-            "ItemInfo.Title",
-            "OffersV2.Listings.Price",
-            "OffersV2.Listings.Condition",
+            "itemInfo.title",
+            "offersV2.listings.price",
+            "offersV2.listings.condition",
         ],
     }).encode()
 
@@ -90,23 +90,32 @@ def get_item_price(token: str) -> dict:
 
 
 def extract_price(response: dict) -> tuple[str, float | None]:
-    """Return (title, price) from the API response."""
+    """Return (title, price) from the API response.
+
+    Handles both PascalCase (PA-API 5.0) and camelCase (Creators API)
+    response field names.
+    """
     items = response.get("itemsResult", {}).get("items", [])
     if not items:
         return ("Unknown", None)
 
     item = items[0]
-    title = (
-        item.get("itemInfo", {})
-        .get("title", {})
-        .get("displayValue", "Unknown")
-    )
 
-    listings = item.get("offersV2", {}).get("listings", [])
+    # Title — try camelCase then PascalCase
+    item_info = item.get("itemInfo", item.get("ItemInfo", {}))
+    title_obj = item_info.get("title", item_info.get("Title", {}))
+    title = title_obj.get("displayValue", title_obj.get("DisplayValue", "Unknown"))
+
+    # Offers — try camelCase then PascalCase
+    offers = item.get("offersV2", item.get("OffersV2", item.get("Offers", {})))
+    listings = offers.get("listings", offers.get("Listings", []))
     if not listings:
         return (title, None)
 
-    price = listings[0].get("price", {}).get("money", {}).get("amount")
+    price_obj = listings[0].get("price", listings[0].get("Price", {}))
+    money = price_obj.get("money", price_obj.get("Money", {}))
+    price = money.get("amount", money.get("Amount"))
+
     return (title, price)
 
 
