@@ -46,7 +46,7 @@ MIN_HISTORY_FOR_DYNAMIC = 7
 # percentile math says to (guards against sparse/weird early data).
 PRODUCTS = [
     {"asin": "B0002E2EYY", "label": "Lavazza DEK",         "max_price": 20.00},
-    {"asin": "B084YXNC2J", "label": "Lavazza DEK Filtro",  "max_price": 18.00},
+    {"asin": "B084YXNC2J", "label": "Lavazza DEK Filtro",  "max_price": 16.00},
 ]
 
 
