@@ -180,6 +180,35 @@ def log_prices(price_data: dict[str, tuple[str, float]]):
 
 
 # ---------------------------------------------------------------------------
+# Price stats from history
+# ---------------------------------------------------------------------------
+def compute_stats(asin: str) -> dict:
+    """Compute price stats for an ASIN from the history file."""
+    history = load_price_history()
+    entries = history.get(asin, [])
+    if not entries:
+        return {}
+
+    prices = [e["price"] for e in entries]
+    cutoff_7d = (datetime.now(timezone.utc) - timedelta(days=7)).strftime("%Y-%m-%d")
+    week_prices = [e["price"] for e in entries if e["date"] >= cutoff_7d]
+
+    stats = {
+        "all_time_low": min(prices),
+        "all_time_high": max(prices),
+        "all_time_avg": sum(prices) / len(prices),
+    }
+
+    if week_prices:
+        stats["week_avg"] = sum(week_prices) / len(week_prices)
+
+    if len(entries) >= 2:
+        stats["previous_price"] = entries[-2]["price"]
+
+    return stats
+
+
+# ---------------------------------------------------------------------------
 # GitHub Issue helpers
 # ---------------------------------------------------------------------------
 def create_github_issue(title: str, body: str, label: str = "price-alert"):
@@ -232,16 +261,51 @@ def daily_check():
         threshold = thresholds[asin]
         if price < threshold:
             print(f"  {labels[asin]} ${price:.2f} < ${threshold:.2f} — creating alert!")
+            stats = compute_stats(asin)
+
+            # Context lines
+            context_lines = []
+            if "week_avg" in stats:
+                diff = stats["week_avg"] - price
+                context_lines.append(
+                    f"That's **${diff:.2f} below** your ${stats['week_avg']:.2f} weekly average"
+                )
+            if "all_time_low" in stats:
+                if price <= stats["all_time_low"]:
+                    context_lines.append("and a new **all-time low**! \U0001f389")
+                else:
+                    gap = price - stats["all_time_low"]
+                    context_lines.append(
+                        f"and only **${gap:.2f} above** the all-time low of ${stats['all_time_low']:.2f}!"
+                    )
+
+            context = " ".join(context_lines) if context_lines else ""
+
+            # Stats table
+            table_rows = [
+                f"| Current | **${price:.2f}** |",
+                f"| Your threshold | ${threshold:.2f} |",
+            ]
+            if "week_avg" in stats:
+                table_rows.append(f"| 7-day avg | ${stats['week_avg']:.2f} |")
+            if "all_time_low" in stats:
+                table_rows.append(f"| All-time low | ${stats['all_time_low']:.2f} |")
+            if "all_time_high" in stats:
+                table_rows.append(f"| All-time high | ${stats['all_time_high']:.2f} |")
+            table = "\n".join(table_rows)
+
             body = (
-                f"The price of **{title}** (ASIN: `{asin}`) "
-                f"has dropped to **${price:.2f}**, which is below your "
-                f"threshold of **${threshold:.2f}**.\n\n"
-                f"[View on Amazon](https://www.amazon.com/dp/{asin}?tag={PARTNER_TAG})\n\n"
+                f"**☕ Deal Alert: {labels[asin]} — ${price:.2f}**\n\n"
+                f"{context}\n\n"
+                f"| | |\n"
+                f"|---|---|\n"
+                f"{table}\n\n"
+                f"**[☕ Buy it on Amazon →](https://www.amazon.com/dp/{asin}?tag={PARTNER_TAG})**\n\n"
                 f"---\n"
-                f"*This issue was created automatically by the price checker.*"
+                f"*Price checked automatically — close this issue to dismiss.*"
             )
             create_github_issue(
-                title=f"\U0001f514 Price Alert: {labels[asin]} is ${price:.2f}",
+                title=f"☕ Deal Alert: {labels[asin]} — ${price:.2f}",
                 body=body,
                 label="price-alert",
             )
