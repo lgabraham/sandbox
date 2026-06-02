@@ -1,0 +1,56 @@
+name: Amazon Price Checker
+
+on:
+  schedule:
+    # Daily price check at 9:00 AM UTC (Mon-Sun)
+    - cron: "0 9 * * *"
+    # Weekly summary every Friday at 6:00 PM UTC
+    - cron: "0 18 * * 5"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Run mode"
+        required: true
+        default: "--check"
+        type: choice
+        options:
+          - "--check"
+          - "--summary"
+
+jobs:
+  check-price:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Determine run mode
+        id: mode
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "mode=${{ github.event.inputs.mode }}" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event.schedule }}" = "0 18 * * 5" ]; then
+            echo "mode=--summary" >> "$GITHUB_OUTPUT"
+          else
+            echo "mode=--check" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run price checker
+        env:
+          AMAZON_CLIENT_ID: ${{ secrets.AMAZON_CLIENT_ID }}
+          AMAZON_CLIENT_SECRET: ${{ secrets.AMAZON_CLIENT_SECRET }}
+          AMAZON_PARTNER_TAG: "spokenio00-20"
+          AMAZON_ASIN: "B0002E2EYY"
+          PRICE_THRESHOLD: "18.00"
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+        run: python price_checker.py ${{ steps.mode.outputs.mode }}
