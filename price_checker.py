@@ -34,7 +34,7 @@ PRICE_LOG = Path("price_history.json")
 # Products to track: (ASIN, friendly label, price threshold)
 PRODUCTS = [
     {"asin": "B0002E2EYY", "label": "Lavazza DEK",         "threshold": 18.00},
-    {"asin": "B084YXNC2J", "label": "Lavazza DEK Filtro",  "threshold": 18.00},
+    {"asin": "B084YXNC2J", "label": "Lavazza DEK Filtro",  "threshold": 15.00},
 ]
 
 
