@@ -1,0 +1,91 @@
+name: HealthOS CI
+
+# Runs the backend test/lint suite and the frontend build on every push/PR that
+# touches the healthos/ project. Scoped by path so it never overlaps with the
+# unrelated price-checker workflow.
+on:
+  push:
+    paths:
+      - "healthos/**"
+      - ".github/workflows/healthos-ci.yml"
+  pull_request:
+    paths:
+      - "healthos/**"
+      - ".github/workflows/healthos-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: backend (ruff + alembic + pytest)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: healthos
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: healthos
+          POSTGRES_PASSWORD: healthos
+          POSTGRES_DB: healthos
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U healthos"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql+psycopg://healthos:healthos@localhost:5432/healthos
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install dependencies
+        run: uv pip install --system -e ".[dev]"
+
+      - name: Lint (ruff)
+        run: ruff check healthos scripts tests
+
+      - name: Apply migrations
+        run: alembic upgrade head
+
+      - name: Tests (pytest)
+        run: pytest -q
+
+  frontend:
+    name: frontend (build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: healthos/frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+          cache-dependency-path: healthos/frontend/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm build
