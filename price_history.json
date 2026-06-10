@@ -39,6 +39,11 @@
       "date": "2026-06-09",
       "price": 21.3,
       "product": "Lavazza DEK Whole Bean Coffee, Arabica and Robusta Blend, 1.1 lb Bag (Pack of 1)"
+    },
+    {
+      "date": "2026-06-10",
+      "price": 21.3,
+      "product": "Lavazza DEK Whole Bean Coffee, Arabica and Robusta Blend, 1.1 lb Bag (Pack of 1)"
     }
   ],
   "B084YXNC2J": [
@@ -79,6 +84,11 @@
     },
     {
       "date": "2026-06-09",
+      "price": 17.99,
+      "product": "Lavazza Dek Filtro Whole Bean Coffee Medium Roast 1.1LB Bag ,Authentic Italian, Blended and roasted in Italy, Roasted cereals and barrique aromatic note, Nut Free"
+    },
+    {
+      "date": "2026-06-10",
       "price": 17.99,
       "product": "Lavazza Dek Filtro Whole Bean Coffee Medium Roast 1.1LB Bag ,Authentic Italian, Blended and roasted in Italy, Roasted cereals and barrique aromatic note, Nut Free"
     }
