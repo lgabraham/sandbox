@@ -1,38 +1,31 @@
-# Amazon Price Checker
+# sandbox
 
-Tracks the price of Amazon products daily and alerts you via GitHub Issues when prices are genuinely good deals.
+A home for small, self-contained automation projects. Each lives in its own
+folder with its own README, script, and data; each is driven by its own
+scheduled GitHub Actions workflow and alerts via GitHub Issues.
 
-## How it works
+## Projects
 
-### Dynamic thresholds
-Instead of fixed price targets, alerts use the **25th percentile** of all historical prices. This means you only get notified when a price is in the **bottom quarter** of everything we've seen — an actual deal, not just a number you picked.
+| Project | What it does | Folder | Workflow |
+|---------|--------------|--------|----------|
+| **Amazon Price Checker** | Tracks Amazon product prices daily and opens a Deal Alert issue when a price hits the bottom 25% of its history. | [`amazon_price_checker/`](amazon_price_checker/) | [`price-check.yml`](.github/workflows/price-check.yml) |
+| **VIX Alert** | Watches the CBOE Volatility Index and opens an issue when it crosses a threshold (default 35). | [`vix_alert/`](vix_alert/) | [`vix-check.yml`](.github/workflows/vix-check.yml) |
 
-- As the price history grows, the threshold adapts automatically
-- Each product has a **hard ceiling** (`max_price`) as a sanity check — no alerts above this regardless of percentile math
-- For the first 7 days (before enough data exists), the hard ceiling is used as a fallback
+See each project's README for setup, configuration, and how it works.
 
-### Schedules
-- **Daily (9 AM UTC):** Fetches current prices, logs them to `price_history.json`, and creates a ☕ **Deal Alert** issue if the price is at or below the 25th percentile
-- **Friday (6 PM UTC):** Creates a 📊 **Weekly Price Report** issue with a table of the last 7 days of prices, stats, and current thresholds
+## Layout
 
-## Products tracked
+```
+.
+├── amazon_price_checker/   # price tracking + deal alerts
+├── vix_alert/              # volatility index alerts
+└── .github/workflows/      # one scheduled workflow per project
+```
 
-| Product | ASIN | Hard ceiling |
-|---------|------|-------------|
-| Lavazza DEK | `B0002E2EYY` | $20.00 |
-| Lavazza DEK Filtro | `B084YXNC2J` | $18.00 |
+## Adding a new project
 
-## Setup
-
-1. Add these repository secrets (Settings → Secrets and variables → Actions):
-   - `AMAZON_CLIENT_ID` — your Creators API credential ID
-   - `AMAZON_CLIENT_SECRET` — your Creators API secret
-
-2. The workflows run automatically. You can also trigger manually from the **Actions** tab.
-
-## Configuration
-
-In `price_checker.py`:
-- `ALERT_PERCENTILE` — which percentile to alert on (default: 25)
-- `MIN_HISTORY_FOR_DYNAMIC` — data points needed before percentile kicks in (default: 7)
-- `PRODUCTS` — add/remove ASINs, labels, and hard ceilings
+1. Create a new top-level folder (e.g. `my_project/`) with its script and a `README.md`.
+2. Make file paths relative to the script (`Path(__file__).with_name(...)`) so it
+   runs regardless of the working directory.
+3. Add a workflow in `.github/workflows/` that runs it on a schedule and/or on demand.
+4. Add a row to the **Projects** table above.
