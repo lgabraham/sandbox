@@ -31,7 +31,7 @@ GITHUB_REPO = os.environ.get("GITHUB_REPOSITORY", "lgabraham/sandbox")
 
 TOKEN_URL = "https://api.amazon.com/auth/o2/token"
 ITEMS_URL = "https://creatorsapi.amazon/catalog/v1/getItems"
-PRICE_LOG = Path("price_history.json")
+PRICE_LOG = Path(__file__).with_name("price_history.json")
 
 # Alert percentile: alert when price is in the bottom N% of history.
 # 25 = bottom quarter — "cheaper than 75% of prices we've seen."

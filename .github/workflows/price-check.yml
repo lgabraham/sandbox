@@ -53,4 +53,4 @@ jobs:
           PRICE_THRESHOLD: "18.00"
           GITHUB_REPOSITORY: ${{ github.repository }}
           GH_TOKEN: ${{ github.token }}
-        run: python price_checker.py ${{ steps.mode.outputs.mode }}
+        run: python amazon_price_checker/price_checker.py ${{ steps.mode.outputs.mode }}
