@@ -38,6 +38,11 @@ GITHUB_REPO = os.environ.get("GITHUB_REPOSITORY", "lgabraham/sandbox")
 HISTORY_LOG = Path(__file__).with_name("vix_history.json")
 ALERT_LABEL = "vix-alert"
 
+# Assign the alert issue to this GitHub user so it reliably triggers an
+# email notification (issue assignment always notifies the assignee, even
+# if they aren't "watching" the repo). Empty string = don't assign.
+ALERT_ASSIGNEE = os.environ.get("ALERT_ASSIGNEE", "")
+
 USER_AGENT = "Mozilla/5.0 (compatible; vix-alert/1.0)"
 
 YAHOO_URL = (
@@ -171,18 +176,15 @@ def open_alert_exists() -> bool:
 
 
 def create_github_issue(title: str, body: str, label: str = ALERT_LABEL):
-    result = subprocess.run(
-        ["gh", "issue", "create", "--repo", GITHUB_REPO,
-         "--title", title, "--body", body, "--label", label],
-        capture_output=True, text=True,
-    )
+    base = ["gh", "issue", "create", "--repo", GITHUB_REPO,
+            "--title", title, "--body", body]
+    if ALERT_ASSIGNEE:
+        base += ["--assignee", ALERT_ASSIGNEE]
+
+    result = subprocess.run(base + ["--label", label], capture_output=True, text=True)
     if result.returncode != 0:
-        # Label may not exist yet — retry without it.
-        result = subprocess.run(
-            ["gh", "issue", "create", "--repo", GITHUB_REPO,
-             "--title", title, "--body", body],
-            capture_output=True, text=True,
-        )
+        # Label may not exist yet — retry without it (keep the assignee).
+        result = subprocess.run(base, capture_output=True, text=True)
     if result.returncode == 0:
         print(f"  Issue created: {result.stdout.strip()}")
     else:
