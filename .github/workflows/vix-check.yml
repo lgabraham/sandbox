@@ -2,8 +2,9 @@ name: VIX Alert
 
 on:
   schedule:
-    # Weekdays, hourly during US market hours (13:00–21:00 UTC ≈ 9am–5pm ET).
-    - cron: "0 13-21 * * 1-5"
+    # Once per weekday at 21:30 UTC — shortly after the 4pm ET market close
+    # (after close in both EDT and EST, so it captures the settled daily VIX).
+    - cron: "30 21 * * 1-5"
   workflow_dispatch:
 
 # Avoid overlapping runs racing on the history commit.
