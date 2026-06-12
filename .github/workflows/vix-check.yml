@@ -1,0 +1,35 @@
+name: VIX Alert
+
+on:
+  schedule:
+    # Weekdays, hourly during US market hours (13:00–21:00 UTC ≈ 9am–5pm ET).
+    - cron: "0 13-21 * * 1-5"
+  workflow_dispatch:
+
+# Avoid overlapping runs racing on the history commit.
+concurrency:
+  group: vix-alert
+  cancel-in-progress: false
+
+jobs:
+  check-vix:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run VIX checker
+        env:
+          VIX_THRESHOLD: "35"
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+        run: python vix_alert/vix_checker.py --check
